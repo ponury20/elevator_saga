@@ -11,3 +11,4 @@ When elevator is idle - go to the ground floor
 
 ## challenge #2
 
+**Efficiency << 90% (fail)**
