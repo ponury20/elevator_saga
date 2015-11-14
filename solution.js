@@ -1,8 +1,6 @@
 function {
 
 	initApp : function(elevators, floors) {
-		GROUND_FLOOR = 0;
-		HIGH_FLOOR = floors.lenght - 1;
 		ELEVATORS = elevators;
 		FLOORS = floors;
 		FLOORS_QUEUE_UP = [];
@@ -10,6 +8,37 @@ function {
 
 		UP = "up";
 		DOWN = "down";
+		
+		setIndicators = function(elevator) {
+			function indicators(goingUp, goingDown) {
+				elevator.goingUpIndicator(goingUp);
+				elevator.goingDownIndicator(goingDown);
+			}
+			
+			var queue = elevator.destinationQueue;
+			var currentFloor = elevator.currentFloor();
+			var destFloor = queue.length > 0 ? queue[0] : currentFloor;
+			if(currentFloor === destFloor && destFloor === 0)
+				indicators(true, false);
+			else if(currentFloor === destFloor && destFloor === (FLOORS.length-1))
+				indicators(false, true);
+			else if(currentFloor === destFloor && queue.length === 0){
+				indicators(true, true);
+			}
+			else if(currentFloor < destFloor)
+				indicators(true, false);
+			else if(currentFloor > destFloor)
+				indicators(false, true);
+				
+		};
+		
+		goToFloor = function(elevator, floorNum, immediate) {
+			elevator.goToFloor(floorNum, immediate);
+		};
+		
+		debug = function(message) {
+			console.log(message);
+		};
 	},
 
 	/**
@@ -25,44 +54,102 @@ function {
 
 		function floorBtnPressed(floorNum) {
 			if (elevator.destinationQueue.indexOf(floorNum) < 0)
-				elevator.goToFloor(floorNum);
+				goToFloor(elevator, floorNum, false);
 		}
 
 		function stopOnFloorFromQueue(floorNum, direction) {
 			if (elevator.loadFactor() === 1)
 				return;
-			var queue = [];
-			if (direction === UP || floorNum === HIGH_FLOOR) {
-				queue = FLOORS_QUEUE_UP;
-			} else if (direction === DOWN || floorNum === GROUND_FLOOR) {
-				queue = FLOORS_QUEUE_DOWN;
+			var idx = elevator.destinationQueue.indexOf(floorNum);
+			if( idx >= 0) {
+				elevator.destinationQueue.splice(idx, 1)
+				debug('stopOnFloorFromQueue1 - removed from ELEVATOR QUEUE ' + floorNum + ' and should go there immediate');
+				goToFloor(elevator, floorNum, true);
+				return;
 			}
+			
+			var queue = [];
+			if (direction === UP || floorNum === (FLOORS.lenght - 1))
+				queue = FLOORS_QUEUE_UP;
+			else if (direction === DOWN || floorNum === 0)
+				queue = FLOORS_QUEUE_DOWN;
+			
 			var idx = queue.indexOf(floorNum);
 			if (idx >= 0) {
+				debug('stopOnFloorFromQueue2 - removed from WAITING FLOOR QUEUE ' + floorNum + ' and should go there immediate');
 				queue.splice(idx, 1);
-				elevator.goToFloor(floorNum, true);
+				goToFloor(elevator, floorNum, true);	
 			}
+		}
+		
+		function notArrivedOnCallingFloor() {
+			var currentFloor = FLOORS[elevator.currentFloor()];
+			return currentFloor.buttonStates.up != "activated" 
+				&& currentFloor.buttonStates.down != "activated";
 		}
 
 		function findAnyCallingFloor() {
-			if (FLOORS_QUEUE_DOWN.length > 0)
-				elevator.goToFloor(FLOORS_QUEUE_DOWN.shift(), true);
-			else if (FLOORS_QUEUE_UP.length > 0)
-				elevator.goToFloor(FLOORS_QUEUE_UP.shift(), true);
+			for (i=0; i<FLOORS_QUEUE_DOWN.length; i++) {
+				var floorNum = FLOORS_QUEUE_DOWN[i];
+				var alreadyPicked = false;
+				for (i = 0; i < ELEVATORS.length; i++)
+					if (ELEVATORS[i].destinationQueue.indexOf(floorNum) >= 0)
+						alreadyPicked = true;
+				if(!alreadyPicked) {
+					goToFloor(elevator, floorNum, true);
+					return;
+				}
+			}
+			
+			for (i=0; i<FLOORS_QUEUE_UP.length; i++) {
+				var floorNum = FLOORS_QUEUE_UP[i];
+				var alreadyPicked = false;
+				for (i = 0; i < ELEVATORS.length; i++)
+					if (ELEVATORS[i].destinationQueue.indexOf(floorNum) >= 0)
+						alreadyPicked = true;
+				if(!alreadyPicked) {
+					goToFloor(elevator, floorNum, true);
+					return;
+				}
+			}
+			
+			/*
+			if (FLOORS_QUEUE_DOWN.length > 0) {
+				var floorNum = FLOORS_QUEUE_DOWN[0];
+				
+				debug('findAnyCallingFloor1 - removed from WAITING FLOOR DOWN QUEUE ' + floorNum + ' and should go there immediate');
+				goToFloor(elevator, floorNum, true);
+			}
+			else if (FLOORS_QUEUE_UP.length > 0) {
+				var floorNum = FLOORS_QUEUE_UP.shift();
+				debug('findAnyCallingFloor2 - removed from WAITING FLOOR UP QUEUE ' + floorNum + ' and should go there immediate');
+				goToFloor(elevator, floorNum, true);
+			}
+			else
+				goToFloor(elevator, elevator.currentFloor(), true);
+			*/
 		}
 
 		function handleIdle() {
-			findAnyCallingFloor();
+			if(notArrivedOnCallingFloor())
+				findAnyCallingFloor();
+			else
+				goToFloor(elevator, elevator.currentFloor(), true);
 		}
 
 		function stoppedAtFloor(floorNum) {
+			
 			var idx = FLOORS_QUEUE_UP.indexOf(floorNum);
-			if (idx >= 0)
+			if (idx >= 0 && (elevator.goingUpIndicator() || floorNum == FLOORS.length-1)) {
+				debug('stoppedAtFloor1 - removed from WAITING FLOOR UP QUEUE ' + floorNum + ' and should go there immediate');
 				FLOORS_QUEUE_UP.splice(idx, 1);
+			}
 
 			idx = FLOORS_QUEUE_DOWN.indexOf(floorNum);
-			if (idx >= 0)
+			if (idx >= 0 && (elevator.goingDownIndicator() || floorNum == 0)) {
+				debug('stoppedAtFloor2 - removed from WAITING FLOOR DOWN QUEUE ' + floorNum + ' and should go there immediate');
 				FLOORS_QUEUE_DOWN.splice(idx, 1);
+			}
 		}
 
 		elevator.on("floor_button_pressed", floorBtnPressed);
@@ -90,8 +177,6 @@ function {
 					ELEVATORS[i].trigger("idle");
 					return;
 				}
-
-			// ELEVATORS[0].trigger("idle");
 
 		}
 
@@ -122,6 +207,6 @@ function {
 	},
 
 	update : function(dt, elevators, floors) {
-		// We normally don't need to do anything here
+		elevators.forEach(setIndicators);
 	}
 }
